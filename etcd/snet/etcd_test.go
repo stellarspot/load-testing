@@ -46,13 +46,19 @@ func Uint32ToInt(uint32 *Uint32) int {
 type Client struct {
 	channelID *Uint32
 	nonce     *Uint32
-	curAmount int
-	maxAmount int
-	signature int
+	curAmount *Uint32
+	maxAmount *Uint32
+	signature *Uint32
 }
 
 func (client *Client) ToString() string {
-	return fmt.Sprint("[", "channel id: ", Uint32ToInt(client.channelID), "]")
+	return fmt.Sprint("[",
+		"channel id: ", Uint32ToInt(client.channelID), ", ",
+		"nonce: ", Uint32ToInt(client.nonce), ", ",
+		"curr amount: ", Uint32ToInt(client.curAmount), ", ",
+		"signature: ", Uint32ToInt(client.signature),
+		"]",
+	)
 }
 
 var endpoints []string = make([]string, 0)
@@ -61,9 +67,13 @@ var readsNum int
 var writesNum int
 var timeout = 3 * time.Second
 
-func createTestClient(i int) Client {
+func createTestClient(clientNum int, requestNum int) Client {
 	return Client{
-		channelID: IntToUint32(i),
+		channelID: IntToUint32(clientNum),
+		nonce:     IntToUint32(0),
+		curAmount: IntToUint32(10 + clientNum),
+		maxAmount: IntToUint32(50),
+		signature: IntToUint32(5 + clientNum<<4 + requestNum),
 	}
 }
 
@@ -75,7 +85,7 @@ func etcdEnpointIs(endpoint string) error {
 func thereAreClients(clientsNum int) error {
 
 	for i := 0; i < clientsNum; i++ {
-		clients = append(clients, createTestClient(i))
+		clients = append(clients, createTestClient(i, 3))
 	}
 
 	return nil
