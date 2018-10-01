@@ -9,12 +9,50 @@ import (
 	"go.etcd.io/etcd/clientv3"
 )
 
+type Uint32 struct {
+	Hash []byte
+}
+
+func NewUint32(h []byte) *Uint32 {
+	return &Uint32{Hash: h}
+}
+
+func IntToUint32(value int) *Uint32 {
+	return NewUint32([]byte{
+		byte(value & 0x000000FF),
+		byte(value & 0x0000FF00),
+		byte(value & 0x00FF0000),
+		byte(value & 0xFF000000),
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+	})
+}
+
+func Uint32ToInt(uint32 *Uint32) int {
+
+	var value int
+	base := 1
+
+	for i := 0; i < 3; i++ {
+		value += int(uint32.Hash[i]) * base
+		base <<= 8
+	}
+
+	return value
+}
+
 type Client struct {
-	channelID int
-	nonce     int
+	channelID *Uint32
+	nonce     *Uint32
 	curAmount int
 	maxAmount int
 	signature int
+}
+
+func (client *Client) ToString() string {
+	return fmt.Sprint("[", "channel id: ", Uint32ToInt(client.channelID), "]")
 }
 
 var endpoints []string = make([]string, 0)
@@ -22,6 +60,12 @@ var clients []Client = make([]Client, 0)
 var readsNum int
 var writesNum int
 var timeout = 3 * time.Second
+
+func createTestClient(i int) Client {
+	return Client{
+		channelID: IntToUint32(i),
+	}
+}
 
 func etcdEnpointIs(endpoint string) error {
 	endpoints = append(endpoints, endpoint)
@@ -31,10 +75,7 @@ func etcdEnpointIs(endpoint string) error {
 func thereAreClients(clientsNum int) error {
 
 	for i := 0; i < clientsNum; i++ {
-		client := Client{
-			channelID: i,
-		}
-		clients = append(clients, client)
+		clients = append(clients, createTestClient(i))
 	}
 
 	return nil
@@ -43,7 +84,7 @@ func thereAreClients(clientsNum int) error {
 func eachOfThemWritesTimesAndReadsTimes(writes int, reads int) error {
 
 	for i := 0; i < len(clients); i++ {
-		fmt.Println("Client is added: ", clients[i])
+		fmt.Println("Client is added: ", clients[i].ToString())
 	}
 
 	readsNum = reads
