@@ -46,6 +46,38 @@ func ByteArrayToInt(array []byte) int {
 	return value
 }
 
+type RequestCounter struct {
+	totalRequets  int
+	readRequests  int
+	writeRequests int
+	start         time.Time
+}
+
+func NewRequestCounter() *RequestCounter {
+	return &RequestCounter{start: time.Now()}
+}
+
+func (counter *RequestCounter) IncWrites() {
+	counter.writeRequests++
+	counter.totalRequets++
+}
+
+func (counter *RequestCounter) IncReads() {
+	counter.readRequests++
+	counter.totalRequets++
+}
+
+func (counter *RequestCounter) Count() {
+	elapsed := time.Now().Sub(counter.start).Seconds()
+	requestsPerTime := float64(counter.totalRequets) / float64(elapsed)
+	fmt.Println("total requests: ", counter.totalRequets,
+		"write requests: ", counter.writeRequests,
+		"read requests: ", counter.readRequests)
+	fmt.Println("elapsed time in seconds: ", elapsed,
+		"requests per seconds: ", strconv.FormatFloat(requestsPerTime, 'f', 2, 64))
+
+}
+
 type TestClientRequest struct {
 	channelID  uint32
 	nonce      uint32
@@ -206,10 +238,7 @@ func numberOfIterationsIs(iter int) error {
 
 func putGetRequestsShouldSucceed() error {
 
-	totalRequets := 0
-	readRequests := 0
-	writeRequests := 0
-	start := time.Now()
+	requestCounter := NewRequestCounter()
 
 	etcd, err := NewEtcdStorageClient(endpoints)
 
@@ -226,16 +255,14 @@ func putGetRequestsShouldSucceed() error {
 			value := client.GetValue()
 
 			err = etcd.Put(key, value)
-			writeRequests++
-			totalRequets++
+			requestCounter.IncWrites()
 
 			if err != nil {
 				return err
 			}
 
 			result, err := etcd.Get(key)
-			readRequests++
-			totalRequets++
+			requestCounter.IncReads()
 
 			if err != nil {
 				return err
@@ -249,10 +276,7 @@ func putGetRequestsShouldSucceed() error {
 		}
 	}
 
-	elapsed := time.Now().Sub(start).Seconds()
-	requestsPerTime := float64(totalRequets) / float64(elapsed)
-	fmt.Println("total requests: ", totalRequets, "write requests: ", writeRequests, "read requests: ", readRequests)
-	fmt.Println("elapsed time in seconds: ", elapsed, "requests per seconds: ", strconv.FormatFloat(requestsPerTime, 'f', 2, 64))
+	requestCounter.Count()
 
 	return nil
 }
