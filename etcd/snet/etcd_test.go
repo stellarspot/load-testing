@@ -47,19 +47,16 @@ func ByteArrayToInt(array []byte) int {
 }
 
 type RequestCounter struct {
+	message       string
 	totalRequets  int
 	readRequests  int
 	writeRequests int
+	casRequests   int
 	start         time.Time
 }
 
-func NewRequestCounter() *RequestCounter {
-	return &RequestCounter{start: time.Now()}
-}
-
-func (counter *RequestCounter) IncWrites() {
-	counter.writeRequests++
-	counter.totalRequets++
+func NewRequestCounter(msg string) *RequestCounter {
+	return &RequestCounter{message: msg, start: time.Now()}
 }
 
 func (counter *RequestCounter) IncReads() {
@@ -67,12 +64,25 @@ func (counter *RequestCounter) IncReads() {
 	counter.totalRequets++
 }
 
+func (counter *RequestCounter) IncWrites() {
+	counter.writeRequests++
+	counter.totalRequets++
+}
+
+func (counter *RequestCounter) IncCAS() {
+	counter.casRequests++
+	counter.totalRequets++
+}
+
 func (counter *RequestCounter) Count() {
+	fmt.Println(counter.message)
 	elapsed := time.Now().Sub(counter.start).Seconds()
 	requestsPerTime := float64(counter.totalRequets) / float64(elapsed)
 	fmt.Println("total requests: ", counter.totalRequets,
+		"read  requests: ", counter.readRequests,
 		"write requests: ", counter.writeRequests,
-		"read requests: ", counter.readRequests)
+		"cas   requests: ", counter.casRequests,
+	)
 	fmt.Println("elapsed time in seconds: ", elapsed,
 		"requests per seconds: ", strconv.FormatFloat(requestsPerTime, 'f', 2, 64))
 
@@ -238,7 +248,7 @@ func numberOfIterationsIs(iter int) error {
 
 func putGetRequestsShouldSucceed() error {
 
-	requestCounter := NewRequestCounter()
+	requestCounter := NewRequestCounter("Count Put/Get requests")
 
 	etcd, err := NewEtcdStorageClient(endpoints)
 
@@ -283,6 +293,7 @@ func putGetRequestsShouldSucceed() error {
 
 func compareAndSetRequestsShouldSucceed() error {
 
+	requestCounter := NewRequestCounter("Count CAS requests")
 	etcd, etcdError := NewEtcdStorageClient(endpoints)
 
 	if etcdError != nil {
@@ -310,18 +321,21 @@ func compareAndSetRequestsShouldSucceed() error {
 			value := client.GetValue()
 
 			prevValue, err := etcd.Get(key)
+			requestCounter.IncReads()
 
 			if err != nil {
 				return err
 			}
 
 			success, err := etcd.CompareAndSet(key, prevValue, value)
+			requestCounter.IncCAS()
 
 			if err != nil {
 				return err
 			}
 
 			newValue, err := etcd.Get(key)
+			requestCounter.IncReads()
 
 			if !success {
 				msg := fmt.Sprintln("etcd CAS fails. Values",
@@ -333,9 +347,10 @@ func compareAndSetRequestsShouldSucceed() error {
 			}
 
 			client.IncAmount()
-
 		}
 	}
+
+	requestCounter.Count()
 
 	return nil
 }
