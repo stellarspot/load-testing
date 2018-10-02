@@ -1,7 +1,9 @@
 package snet
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -10,16 +12,16 @@ import (
 	"go.etcd.io/etcd/clientv3"
 )
 
-type Uint32 struct {
-	Hash []byte
+func ByteArraytoString(bytes []byte) string {
+	return string(bytes)
 }
 
-func NewUint32(h []byte) *Uint32 {
-	return &Uint32{Hash: h}
+func StringToByteArray(str string) []byte {
+	return []byte(str)
 }
 
-func IntToUint32(value int) *Uint32 {
-	return NewUint32([]byte{
+func IntToByte32(value uint32) []byte {
+	return []byte{
 		byte(value & 0x000000FF),
 		byte(value & 0x0000FF00),
 		byte(value & 0x00FF0000),
@@ -28,16 +30,16 @@ func IntToUint32(value int) *Uint32 {
 		0x00,
 		0x00,
 		0x00,
-	})
+	}
 }
 
-func Uint32ToInt(uint32 *Uint32) int {
+func ByteArrayToInt(array []byte) int {
 
 	var value int
 	base := 1
 
-	for i := 0; i < 3; i++ {
-		value += int(uint32.Hash[i]) * base
+	for i := 0; i < len(array); i++ {
+		value += int(array[i]) * base
 		base <<= 8
 	}
 
@@ -45,45 +47,135 @@ func Uint32ToInt(uint32 *Uint32) int {
 }
 
 type Client struct {
-	channelID *Uint32
-	nonce     *Uint32
-	curAmount *Uint32
-	maxAmount *Uint32
-	signature *Uint32
+	channelID  uint32
+	nonce      uint32
+	prevAmount uint32
+	curAmount  uint32
+	maxAmount  uint32
+	signature  uint32
+}
+
+func (client *Client) GetKey() []byte {
+	return IntToByte32(client.channelID)
+}
+
+func (client *Client) GetValue() []byte {
+	return IntToByte32(client.curAmount)
+}
+
+func (client *Client) IncAmount() {
+	client.prevAmount = client.curAmount
+	client.curAmount = client.curAmount + 1
 }
 
 func (client *Client) ToString() string {
 	return fmt.Sprint("[",
-		"channel id: ", Uint32ToInt(client.channelID), ", ",
-		"nonce: ", Uint32ToInt(client.nonce), ", ",
-		"curr amount: ", Uint32ToInt(client.curAmount), ", ",
-		"signature: ", Uint32ToInt(client.signature),
+		"channel id: ", client.channelID, ", ",
+		// "nonce: ", client.nonce, ", ",
+		"prev amount: ", client.prevAmount, ", ",
+		"curr amount: ", client.curAmount, ", ",
+		// "signature: ", client.signature,
 		"]",
 	)
 }
 
-func (client *Client) GetKey() string {
-	return "Key"
+type EtcdStorageClient struct {
+	etcdv3 *clientv3.Client
 }
 
-func (client *Client) GetValue() string {
-	return "Value"
+func NewEtcdStorageClient(endpoints []string) (*EtcdStorageClient, error) {
+	etcdv3, err := clientv3.New(clientv3.Config{
+		Endpoints:   endpoints,
+		DialTimeout: timeout,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	etcdStorageClient := EtcdStorageClient{
+		etcdv3: etcdv3,
+	}
+
+	return &etcdStorageClient, nil
+}
+
+func (storageClient *EtcdStorageClient) Get(key []byte) ([]byte, error) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	response, err := storageClient.etcdv3.Get(ctx, ByteArraytoString(key))
+	defer cancel()
+
+	if debug {
+		fmt.Println("get response", response)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	for _, kv := range response.Kvs {
+		return kv.Value, nil
+	}
+	return nil, nil
+}
+
+func (storageClient *EtcdStorageClient) Put(key []byte, value []byte) error {
+
+	etcdv3 := storageClient.etcdv3
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	response, err := etcdv3.Put(ctx, ByteArraytoString(key), ByteArraytoString(value))
+	defer cancel()
+
+	if debug {
+		fmt.Println("put response", response)
+	}
+
+	return err
+}
+
+func (storageClient *EtcdStorageClient) CompareAndSet(key []byte, expect []byte, update []byte) (bool, error) {
+
+	etcdv3 := storageClient.etcdv3
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	response, err := etcdv3.KV.Txn(ctx).If(
+		clientv3.Compare(clientv3.Value(ByteArraytoString(key)), "=", ByteArraytoString(expect)),
+	).Then(
+		clientv3.OpPut(ByteArraytoString(key), ByteArraytoString(update)),
+	).Commit()
+
+	if debug {
+		fmt.Println("put response", response)
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 var debug = false
 var endpoints []string = make([]string, 0)
-var clients []Client = make([]Client, 0)
-var readsNum int
-var writesNum int
+
+var clients []*Client
+var clientsNum int
+var iterations int
 var timeout = 3 * time.Second
 
-func createTestClient(clientNum int, requestNum int) Client {
-	return Client{
-		channelID: IntToUint32(clientNum),
-		nonce:     IntToUint32(0),
-		curAmount: IntToUint32(10 + clientNum),
-		maxAmount: IntToUint32(50),
-		signature: IntToUint32(5 + clientNum<<4 + requestNum),
+func createTestClient(clientNum uint32) *Client {
+
+	prevAmount := uint32(1)
+
+	return &Client{
+		channelID:  clientNum,
+		nonce:      clientNum * 2,
+		prevAmount: prevAmount,
+		curAmount:  prevAmount + 1,
+		maxAmount:  50,
+		signature:  100,
 	}
 }
 
@@ -92,30 +184,23 @@ func etcdEnpointIs(endpoint string) error {
 	return nil
 }
 
-func thereAreClients(clientsNum int) error {
+func thereAreClients(num int) error {
 
+	clientsNum = num
 	for i := 0; i < clientsNum; i++ {
-		clients = append(clients, createTestClient(i, 3))
+		clients = append(clients, createTestClient(uint32(i)))
 	}
 
 	return nil
 }
 
-func eachOfThemWritesTimesAndReadsTimes(writes int, reads int) error {
-
-	for i := 0; i < len(clients); i++ {
-		fmt.Println("Client is added: ", clients[i].ToString())
-	}
-
-	readsNum = reads
-	writesNum = writes
-
-	fmt.Println("writes: ", writesNum, "reads: ", readsNum)
-
+func numberOfIterationsIs(iter int) error {
+	iterations = iter
+	fmt.Println("iterations: ", iterations)
 	return nil
 }
 
-func allResultsShouldSucceed() error {
+func putGetRequestsShouldSucceed() error {
 
 	totalRequets := 0
 	readRequests := 0
@@ -124,53 +209,53 @@ func allResultsShouldSucceed() error {
 
 	fmt.Println("call etcd client")
 
-	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:   endpoints,
-		DialTimeout: timeout,
-	})
+	etcd, err := NewEtcdStorageClient(endpoints)
 
 	if err != nil {
 		return err
 	}
-	defer cli.Close()
 
+	// init
 	for _, client := range clients {
 
 		key := client.GetKey()
-		value := client.GetValue()
+		initialAmount := IntToByte32(client.prevAmount)
 
-		for i := 0; i < writesNum; i++ {
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			putResponse, err := cli.Put(ctx, key, value)
-			cancel()
+		err = etcd.Put(key, initialAmount)
+		if err != nil {
+			return err
+		}
+	}
 
-			if err != nil {
-				return err
-			}
+	for i := 0; i < iterations; i++ {
 
-			if debug {
-				fmt.Println("put response: ", putResponse)
-			}
+		// put/get
+		for _, client := range clients {
 
+			key := client.GetKey()
+			value := client.GetValue()
+
+			err = etcd.Put(key, value)
 			writeRequests++
 			totalRequets++
-		}
 
-		for j := 0; j < readsNum; j++ {
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			getResponse, err := cli.Get(ctx, key)
-
-			cancel()
 			if err != nil {
 				return err
 			}
 
-			if debug {
-				fmt.Println("get response: ", getResponse)
-			}
-
+			result, err := etcd.Get(key)
 			readRequests++
 			totalRequets++
+
+			if err != nil {
+				return err
+			}
+
+			if !bytes.Equal(value, result) {
+				return errors.New("Values are not equal")
+			}
+
+			client.IncAmount()
 		}
 	}
 
@@ -185,6 +270,6 @@ func allResultsShouldSucceed() error {
 func FeatureContext(s *godog.Suite) {
 	s.Step(`^etcd enpoint is "([^"]*)"$`, etcdEnpointIs)
 	s.Step(`^there are (\d+) clients$`, thereAreClients)
-	s.Step(`^each of them writes (\d+) times and reads (\d+) times$`, eachOfThemWritesTimesAndReadsTimes)
-	s.Step(`^all results should succeed$`, allResultsShouldSucceed)
+	s.Step(`^number of iterations is (\d+)$`, numberOfIterationsIs)
+	s.Step(`^Put\/Get requests should succeed$`, putGetRequestsShouldSucceed)
 }
