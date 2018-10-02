@@ -4,7 +4,6 @@
 
 ### Local
 
-Request
 | Requests | Count |
 |----------|-------|
 | reads    | 6400  |
@@ -12,4 +11,5 @@ Request
 | total    | 12800 |
 
 Elapsed time: 9.489s
+
 Requests per seconds:  1348.89
