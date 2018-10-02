@@ -63,6 +63,10 @@ func (client *Client) GetValue() []byte {
 	return IntToByte32(client.curAmount)
 }
 
+func (client *Client) GetPrevValue() []byte {
+	return IntToByte32(client.prevAmount)
+}
+
 func (client *Client) IncAmount() {
 	client.prevAmount = client.curAmount
 	client.curAmount = client.curAmount + 1
@@ -154,7 +158,7 @@ func (storageClient *EtcdStorageClient) CompareAndSet(key []byte, expect []byte,
 		return false, err
 	}
 
-	return true, nil
+	return response.Succeeded, nil
 }
 
 var debug = false
@@ -207,24 +211,10 @@ func putGetRequestsShouldSucceed() error {
 	writeRequests := 0
 	start := time.Now()
 
-	fmt.Println("call etcd client")
-
 	etcd, err := NewEtcdStorageClient(endpoints)
 
 	if err != nil {
 		return err
-	}
-
-	// init
-	for _, client := range clients {
-
-		key := client.GetKey()
-		initialAmount := IntToByte32(client.prevAmount)
-
-		err = etcd.Put(key, initialAmount)
-		if err != nil {
-			return err
-		}
 	}
 
 	for i := 0; i < iterations; i++ {
@@ -267,9 +257,69 @@ func putGetRequestsShouldSucceed() error {
 	return nil
 }
 
+func compareAndSetRequestsShouldSucceed() error {
+
+	etcd, etcdError := NewEtcdStorageClient(endpoints)
+
+	if etcdError != nil {
+		return etcdError
+	}
+
+	// init
+	for _, client := range clients {
+
+		key := client.GetKey()
+		initialAmount := IntToByte32(client.prevAmount)
+
+		err := etcd.Put(key, initialAmount)
+		if err != nil {
+			return err
+		}
+	}
+
+	for i := 0; i < iterations; i++ {
+
+		// CAS
+		for _, client := range clients {
+
+			key := client.GetKey()
+			value := client.GetValue()
+
+			prevValue, err := etcd.Get(key)
+
+			if err != nil {
+				return err
+			}
+
+			success, err := etcd.CompareAndSet(key, prevValue, value)
+
+			if err != nil {
+				return err
+			}
+
+			newValue, err := etcd.Get(key)
+
+			if !success {
+				msg := fmt.Sprintln("etcd CAS fails. Values",
+					" expect: ", prevValue,
+					" update: ", value,
+					" result: ", newValue,
+				)
+				return errors.New(msg)
+			}
+
+			client.IncAmount()
+
+		}
+	}
+
+	return nil
+}
+
 func FeatureContext(s *godog.Suite) {
 	s.Step(`^etcd enpoint is "([^"]*)"$`, etcdEnpointIs)
 	s.Step(`^there are (\d+) clients$`, thereAreClients)
 	s.Step(`^number of iterations is (\d+)$`, numberOfIterationsIs)
 	s.Step(`^Put\/Get requests should succeed$`, putGetRequestsShouldSucceed)
+	s.Step(`^CompareAndSet requests should succeed$`, compareAndSetRequestsShouldSucceed)
 }
