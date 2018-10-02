@@ -46,7 +46,7 @@ func ByteArrayToInt(array []byte) int {
 	return value
 }
 
-type Client struct {
+type TestClientRequest struct {
 	channelID  uint32
 	nonce      uint32
 	prevAmount uint32
@@ -55,24 +55,24 @@ type Client struct {
 	signature  uint32
 }
 
-func (client *Client) GetKey() []byte {
+func (client *TestClientRequest) GetKey() []byte {
 	return IntToByte32(client.channelID)
 }
 
-func (client *Client) GetValue() []byte {
+func (client *TestClientRequest) GetValue() []byte {
 	return IntToByte32(client.curAmount)
 }
 
-func (client *Client) GetPrevValue() []byte {
+func (client *TestClientRequest) GetPrevValue() []byte {
 	return IntToByte32(client.prevAmount)
 }
 
-func (client *Client) IncAmount() {
+func (client *TestClientRequest) IncAmount() {
 	client.prevAmount = client.curAmount
 	client.curAmount = client.curAmount + 1
 }
 
-func (client *Client) ToString() string {
+func (client *TestClientRequest) ToString() string {
 	return fmt.Sprint("[",
 		"channel id: ", client.channelID, ", ",
 		// "nonce: ", client.nonce, ", ",
@@ -164,16 +164,16 @@ func (storageClient *EtcdStorageClient) CompareAndSet(key []byte, expect []byte,
 var debug = false
 var endpoints []string = make([]string, 0)
 
-var clients []*Client
+var clients []*TestClientRequest
 var clientsNum int
 var iterations int
 var timeout = 3 * time.Second
 
-func createTestClient(clientNum uint32) *Client {
+func createTestClient(clientNum uint32) *TestClientRequest {
 
 	prevAmount := uint32(1)
 
-	return &Client{
+	return &TestClientRequest{
 		channelID:  clientNum,
 		nonce:      clientNum * 2,
 		prevAmount: prevAmount,
