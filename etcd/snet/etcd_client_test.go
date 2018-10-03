@@ -161,11 +161,6 @@ func createTestClient(clientNum uint32) *TestClientRequest {
 	}
 }
 
-func etcdEnpointIs(endpoint string) error {
-	endpoints = append(endpoints, endpoint)
-	return nil
-}
-
 func thereAreClients(num int) error {
 
 	clientsNum = num
