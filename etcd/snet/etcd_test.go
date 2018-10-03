@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DATA-DOG/godog"
 	"go.etcd.io/etcd/clientv3"
 )
 
@@ -353,12 +352,4 @@ func compareAndSetRequestsShouldSucceed() error {
 	requestCounter.Count()
 
 	return nil
-}
-
-func FeatureContext(s *godog.Suite) {
-	s.Step(`^etcd enpoint is "([^"]*)"$`, etcdEnpointIs)
-	s.Step(`^there are (\d+) clients$`, thereAreClients)
-	s.Step(`^number of iterations is (\d+)$`, numberOfIterationsIs)
-	s.Step(`^Put\/Get requests should succeed$`, putGetRequestsShouldSucceed)
-	s.Step(`^CompareAndSet requests should succeed$`, compareAndSetRequestsShouldSucceed)
 }
