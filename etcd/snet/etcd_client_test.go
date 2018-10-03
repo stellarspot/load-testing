@@ -11,69 +11,7 @@ import (
 	"go.etcd.io/etcd/clientv3"
 )
 
-func ByteArraytoString(bytes []byte) string {
-	return string(bytes)
-}
-
-func StringToByteArray(str string) []byte {
-	return []byte(str)
-}
-
-func IntToByte32(value uint32) []byte {
-	return []byte{
-		byte(value & 0x000000FF),
-		byte(value & 0x0000FF00),
-		byte(value & 0x00FF0000),
-		byte(value & 0xFF000000),
-		0x00,
-		0x00,
-		0x00,
-		0x00,
-	}
-}
-
-func ByteArrayToInt(array []byte) int {
-
-	var value int
-	base := 1
-
-	for i := 0; i < len(array); i++ {
-		value += int(array[i]) * base
-		base <<= 8
-	}
-
-	return value
-}
-
-type RequestCounter struct {
-	message       string
-	totalRequets  int
-	readRequests  int
-	writeRequests int
-	casRequests   int
-	start         time.Time
-}
-
-func NewRequestCounter(msg string) *RequestCounter {
-	return &RequestCounter{message: msg, start: time.Now()}
-}
-
-func (counter *RequestCounter) IncReads() {
-	counter.readRequests++
-	counter.totalRequets++
-}
-
-func (counter *RequestCounter) IncWrites() {
-	counter.writeRequests++
-	counter.totalRequets++
-}
-
-func (counter *RequestCounter) IncCAS() {
-	counter.casRequests++
-	counter.totalRequets++
-}
-
-func (counter *RequestCounter) Count() {
+func (counter *requestCounter) Count() {
 	fmt.Println(counter.message)
 	elapsed := time.Now().Sub(counter.start).Seconds()
 	requestsPerTime := float64(counter.totalRequets) / float64(elapsed)
@@ -97,15 +35,15 @@ type TestClientRequest struct {
 }
 
 func (client *TestClientRequest) GetKey() []byte {
-	return IntToByte32(client.channelID)
+	return intToByte32(client.channelID)
 }
 
 func (client *TestClientRequest) GetValue() []byte {
-	return IntToByte32(client.curAmount)
+	return intToByte32(client.curAmount)
 }
 
 func (client *TestClientRequest) GetPrevValue() []byte {
-	return IntToByte32(client.prevAmount)
+	return intToByte32(client.prevAmount)
 }
 
 func (client *TestClientRequest) IncAmount() {
@@ -148,7 +86,7 @@ func NewEtcdStorageClient(endpoints []string) (*EtcdStorageClient, error) {
 func (storageClient *EtcdStorageClient) Get(key []byte) ([]byte, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	response, err := storageClient.etcdv3.Get(ctx, ByteArraytoString(key))
+	response, err := storageClient.etcdv3.Get(ctx, byteArraytoString(key))
 	defer cancel()
 
 	if debug {
@@ -169,7 +107,7 @@ func (storageClient *EtcdStorageClient) Put(key []byte, value []byte) error {
 
 	etcdv3 := storageClient.etcdv3
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	response, err := etcdv3.Put(ctx, ByteArraytoString(key), ByteArraytoString(value))
+	response, err := etcdv3.Put(ctx, byteArraytoString(key), byteArraytoString(value))
 	defer cancel()
 
 	if debug {
@@ -186,9 +124,9 @@ func (storageClient *EtcdStorageClient) CompareAndSet(key []byte, expect []byte,
 	defer cancel()
 
 	response, err := etcdv3.KV.Txn(ctx).If(
-		clientv3.Compare(clientv3.Value(ByteArraytoString(key)), "=", ByteArraytoString(expect)),
+		clientv3.Compare(clientv3.Value(byteArraytoString(key)), "=", byteArraytoString(expect)),
 	).Then(
-		clientv3.OpPut(ByteArraytoString(key), ByteArraytoString(update)),
+		clientv3.OpPut(byteArraytoString(key), byteArraytoString(update)),
 	).Commit()
 
 	if debug {
@@ -203,7 +141,6 @@ func (storageClient *EtcdStorageClient) CompareAndSet(key []byte, expect []byte,
 }
 
 var debug = false
-var endpoints []string = make([]string, 0)
 
 var clients []*TestClientRequest
 var clientsNum int
@@ -247,7 +184,7 @@ func numberOfIterationsIs(iter int) error {
 
 func putGetRequestsShouldSucceed() error {
 
-	requestCounter := NewRequestCounter("Count Put/Get requests")
+	requestCounter := newRequestCounter("Count Put/Get requests")
 
 	etcd, err := NewEtcdStorageClient(endpoints)
 
@@ -292,7 +229,7 @@ func putGetRequestsShouldSucceed() error {
 
 func compareAndSetRequestsShouldSucceed() error {
 
-	requestCounter := NewRequestCounter("Count CAS requests")
+	requestCounter := newRequestCounter("Count CAS requests")
 	etcd, etcdError := NewEtcdStorageClient(endpoints)
 
 	if etcdError != nil {
@@ -303,7 +240,7 @@ func compareAndSetRequestsShouldSucceed() error {
 	for _, client := range clients {
 
 		key := client.GetKey()
-		initialAmount := IntToByte32(client.prevAmount)
+		initialAmount := intToByte32(client.prevAmount)
 
 		err := etcd.Put(key, initialAmount)
 		if err != nil {

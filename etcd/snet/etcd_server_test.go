@@ -7,6 +7,8 @@ import (
 	"go.etcd.io/etcd/embed"
 )
 
+var endpoints []string = make([]string, 0)
+
 var etcdServer *embed.Etcd
 
 func ectdServerIsRun() error {
