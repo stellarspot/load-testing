@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"go.etcd.io/etcd/embed"
@@ -15,6 +16,12 @@ var etcdServer *embed.Etcd
 
 func etcdEnpointIs(endpoint string) error {
 	endpoints = append(endpoints, endpoint)
+	return nil
+}
+
+func etcdEnpointsAre(urls string) error {
+	urls = strings.Replace(urls, "\"", "", -1)
+	endpoints = strings.Split(urls, ",")
 	return nil
 }
 
