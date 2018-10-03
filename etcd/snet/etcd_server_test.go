@@ -1,35 +1,36 @@
 package snet
 
 import (
-	"fmt"
-	"log"
+	"errors"
 	"time"
 
 	"go.etcd.io/etcd/embed"
 )
 
+var etcdServer *embed.Etcd
+
 func ectdServerIsRun() error {
 
-	fmt.Println("Start etcd...")
-
+	var err error
 	cfg := embed.NewConfig()
 	cfg.Dir = "default.etcd"
-	e, err := embed.StartEtcd(cfg)
+	etcdServer, err = embed.StartEtcd(cfg)
 
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-
-	defer e.Close()
 
 	select {
-	case <-e.Server.ReadyNotify():
-		log.Printf("Server is ready!")
-	case <-time.After(60 * time.Second):
-		e.Server.Stop() // trigger a shutdown
-		log.Printf("Server took too long to start!")
+	case <-etcdServer.Server.ReadyNotify():
+	case <-time.After(10 * time.Second):
+		etcdServer.Server.Stop()
+		return errors.New("etcd server took too long to start")
 	}
-	log.Fatal(<-e.Err())
 
+	return nil
+}
+
+func etcdServerIsClosed() error {
+	etcdServer.Server.Stop()
 	return nil
 }
