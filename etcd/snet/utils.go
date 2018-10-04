@@ -1,6 +1,11 @@
 package snet
 
-import "time"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+)
 
 func byteArraytoString(bytes []byte) string {
 	return string(bytes)
@@ -62,4 +67,30 @@ func (counter *requestCounter) IncWrites() {
 func (counter *requestCounter) IncCAS() {
 	counter.casRequests++
 	counter.totalRequets++
+}
+
+func (counter *requestCounter) Count() {
+	fmt.Println(counter.message)
+	elapsed := time.Now().Sub(counter.start).Seconds()
+	requestsPerTime := float64(counter.totalRequets) / float64(elapsed)
+	fmt.Println("total requests: ", counter.totalRequets,
+		"read  requests: ", counter.readRequests,
+		"write requests: ", counter.writeRequests,
+		"cas   requests: ", counter.casRequests,
+	)
+	fmt.Println("elapsed time in seconds: ", elapsed,
+		"requests per seconds: ", strconv.FormatFloat(requestsPerTime, 'f', 2, 64))
+
+}
+
+func split(strs string) []string {
+
+	arr := []string{}
+	for _, str := range strings.Split(strs, ",") {
+		str = strings.Replace(str, "\"", "", -1)
+		str = strings.TrimSpace(str)
+		arr = append(arr, str)
+	}
+
+	return arr
 }

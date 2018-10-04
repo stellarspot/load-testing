@@ -3,7 +3,9 @@ package snet
 import "github.com/DATA-DOG/godog"
 
 func FeatureContext(s *godog.Suite) {
-	s.Step(`^etcd enpoints are: (.*)$`, etcdEnpointsAre)
+	s.Step(`^etcd instances names are: (.*)$`, etcdInstancesNamesAre)
+	s.Step(`^etcd client enpoints are: (.*)$`, etcdClientEndpointsAre)
+	s.Step(`^etcd peer   enpoints are: (.*)$`, etcdPeerEnpointsAre)
 	s.Step(`^ectd server is run$`, ectdServerIsRun)
 	s.Step(`^there are (\d+) clients$`, thereAreClients)
 	s.Step(`^number of iterations is (\d+)$`, numberOfIterationsIs)

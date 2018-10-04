@@ -5,25 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"go.etcd.io/etcd/clientv3"
 )
-
-func (counter *requestCounter) Count() {
-	fmt.Println(counter.message)
-	elapsed := time.Now().Sub(counter.start).Seconds()
-	requestsPerTime := float64(counter.totalRequets) / float64(elapsed)
-	fmt.Println("total requests: ", counter.totalRequets,
-		"read  requests: ", counter.readRequests,
-		"write requests: ", counter.writeRequests,
-		"cas   requests: ", counter.casRequests,
-	)
-	fmt.Println("elapsed time in seconds: ", elapsed,
-		"requests per seconds: ", strconv.FormatFloat(requestsPerTime, 'f', 2, 64))
-
-}
 
 type TestClientRequest struct {
 	channelID  uint32
@@ -181,7 +166,7 @@ func putGetRequestsShouldSucceed() error {
 
 	requestCounter := newRequestCounter("Count Put/Get requests")
 
-	etcd, err := NewEtcdStorageClient(endpoints)
+	etcd, err := NewEtcdStorageClient(clientEndpoints)
 
 	if err != nil {
 		return err
@@ -225,7 +210,7 @@ func putGetRequestsShouldSucceed() error {
 func compareAndSetRequestsShouldSucceed() error {
 
 	requestCounter := newRequestCounter("Count CAS requests")
-	etcd, etcdError := NewEtcdStorageClient(endpoints)
+	etcd, etcdError := NewEtcdStorageClient(clientEndpoints)
 
 	if etcdError != nil {
 		return etcdError
