@@ -76,14 +76,25 @@ func runServer(name string, clientEndpoint string, peerEndPoint string) error {
 	cfg.Name = name
 	cfg.Dir = name + ".etcd"
 
+	// --listen-client-urls
 	cfg.LCUrls = []url.URL{*clientURL}
+
+	// --advertise-client-urls
 	cfg.ACUrls = []url.URL{*clientURL}
+	// --listen-peer-urls
 	cfg.LPUrls = []url.URL{*peerURL}
+	// --initial-advertise-peer-urls
 	cfg.APUrls = []url.URL{*peerURL}
 
+	// --initial-cluster
 	initialCluster := getInitialCluster()
 	fmt.Printf("initial cluster: '%v'\n", initialCluster)
 	cfg.InitialCluster = initialCluster
+
+	//  --initial-cluster-state
+	cfg.ClusterState = embed.ClusterStateFlagNew
+
+	// cfg.Debug = true
 
 	etcdServer, err = embed.StartEtcd(cfg)
 
