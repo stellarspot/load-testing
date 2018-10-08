@@ -10,5 +10,6 @@ Feature: etcd load test
     Given there are 10 clients
     Given number of iterations is 10
     Then Put/Get requests should succeed
-    Then CompareAndSet requests should succeed
+    Then Load Put requests should succeed
+    # Then CompareAndSet requests should succeed
     Then Etcd cluster is stopped

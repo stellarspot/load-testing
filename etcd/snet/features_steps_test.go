@@ -10,6 +10,7 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^there are (\d+) clients$`, thereAreClients)
 	s.Step(`^number of iterations is (\d+)$`, numberOfIterationsIs)
 	s.Step(`^Put\/Get requests should succeed$`, putGetRequestsShouldSucceed)
+	s.Step(`^Load Put requests should succeed$`, loadPutRequestsShouldSucceed)
 	s.Step(`^CompareAndSet requests should succeed$`, compareAndSetRequestsShouldSucceed)
 	s.Step(`^Etcd cluster is stopped$`, etcdClusterIsStopped)
 }

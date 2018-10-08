@@ -73,13 +73,18 @@ func (counter *requestCounter) Count() {
 	fmt.Println(counter.message)
 	elapsed := time.Now().Sub(counter.start).Seconds()
 	requestsPerTime := float64(counter.totalRequets) / float64(elapsed)
-	fmt.Println("total requests: ", counter.totalRequets,
-		"read  requests: ", counter.readRequests,
-		"write requests: ", counter.writeRequests,
-		"cas   requests: ", counter.casRequests,
+	fmt.Println("\x1b[34;1m",
+		"total requests: ", counter.totalRequets, "\n",
+		"read  requests: ", counter.readRequests, "\n",
+		"write requests: ", counter.writeRequests, "\n",
+		"cas   requests: ", counter.casRequests, "\n",
+		"\x1b[0m",
 	)
-	fmt.Println("elapsed time in seconds: ", elapsed,
-		"requests per seconds: ", strconv.FormatFloat(requestsPerTime, 'f', 2, 64))
+	fmt.Println("\x1b[36;1m",
+		"elapsed time in seconds: ", elapsed, "\n",
+		"requests per seconds: ", strconv.FormatFloat(requestsPerTime, 'f', 2, 64), "\n",
+		"\x1b[0m",
+	)
 
 }
 

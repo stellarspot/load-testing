@@ -48,10 +48,11 @@ func (client *TestClientRequest) ToString() string {
 }
 
 type EtcdStorageClient struct {
-	etcdv3 *clientv3.Client
+	etcdv3         *clientv3.Client
+	requestCounter *requestCounter
 }
 
-func NewEtcdStorageClient(endpoints []string) (*EtcdStorageClient, error) {
+func NewEtcdStorageClient(message string, endpoints []string) (*EtcdStorageClient, error) {
 	etcdv3, err := clientv3.New(clientv3.Config{
 		Endpoints:   endpoints,
 		DialTimeout: timeout,
@@ -62,7 +63,8 @@ func NewEtcdStorageClient(endpoints []string) (*EtcdStorageClient, error) {
 	}
 
 	etcdStorageClient := EtcdStorageClient{
-		etcdv3: etcdv3,
+		etcdv3:         etcdv3,
+		requestCounter: newRequestCounter(message),
 	}
 
 	return &etcdStorageClient, nil
@@ -73,6 +75,7 @@ func (storageClient *EtcdStorageClient) Get(key []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	response, err := storageClient.etcdv3.Get(ctx, byteArraytoString(key))
 	defer cancel()
+	storageClient.requestCounter.IncReads()
 
 	if debug {
 		fmt.Println("get response", response)
@@ -94,6 +97,7 @@ func (storageClient *EtcdStorageClient) Put(key []byte, value []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	response, err := etcdv3.Put(ctx, byteArraytoString(key), byteArraytoString(value))
 	defer cancel()
+	storageClient.requestCounter.IncWrites()
 
 	if debug {
 		fmt.Println("put response", response)
@@ -113,6 +117,8 @@ func (storageClient *EtcdStorageClient) CompareAndSet(key []byte, expect []byte,
 	).Then(
 		clientv3.OpPut(byteArraytoString(key), byteArraytoString(update)),
 	).Commit()
+
+	storageClient.requestCounter.IncCAS()
 
 	if debug {
 		fmt.Println("put response", response)
@@ -164,9 +170,44 @@ func numberOfIterationsIs(iter int) error {
 
 func putGetRequestsShouldSucceed() error {
 
-	requestCounter := newRequestCounter("Count Put/Get requests")
+	etcd, err := NewEtcdStorageClient("Put/Get requests", clientEndpoints)
 
-	etcd, err := NewEtcdStorageClient(clientEndpoints)
+	if err != nil {
+		return err
+	}
+
+	for _, client := range clients {
+
+		key := client.GetKey()
+		value := client.GetValue()
+
+		err = etcd.Put(key, value)
+
+		if err != nil {
+			return err
+		}
+
+		result, err := etcd.Get(key)
+
+		if err != nil {
+			return err
+		}
+
+		if !bytes.Equal(value, result) {
+			return errors.New("Values are not equal")
+		}
+
+		client.IncAmount()
+	}
+
+	etcd.requestCounter.Count()
+
+	return nil
+}
+
+func loadPutRequestsShouldSucceed() error {
+
+	etcd, err := NewEtcdStorageClient("Load Put/Get requests", clientEndpoints)
 
 	if err != nil {
 		return err
@@ -181,14 +222,12 @@ func putGetRequestsShouldSucceed() error {
 			value := client.GetValue()
 
 			err = etcd.Put(key, value)
-			requestCounter.IncWrites()
 
 			if err != nil {
 				return err
 			}
 
 			result, err := etcd.Get(key)
-			requestCounter.IncReads()
 
 			if err != nil {
 				return err
@@ -202,7 +241,7 @@ func putGetRequestsShouldSucceed() error {
 		}
 	}
 
-	requestCounter.Count()
+	etcd.requestCounter.Count()
 
 	return nil
 }
@@ -210,7 +249,7 @@ func putGetRequestsShouldSucceed() error {
 func compareAndSetRequestsShouldSucceed() error {
 
 	requestCounter := newRequestCounter("Count CAS requests")
-	etcd, etcdError := NewEtcdStorageClient(clientEndpoints)
+	etcd, etcdError := NewEtcdStorageClient("CAS requests", clientEndpoints)
 
 	if etcdError != nil {
 		return etcdError
