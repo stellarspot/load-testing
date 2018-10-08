@@ -4,16 +4,20 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sync"
 	"time"
 
 	"go.etcd.io/etcd/embed"
 )
 
+var mx sync.Mutex
+
+var names []string
 var clientEndpoints []string
 var peerEndpoints []string
-var names []string
 
-var etcdServer *embed.Etcd
+var etcdServers []*embed.Etcd
+var serversWaitGroup sync.WaitGroup
 
 func etcdInstancesNamesAre(values string) error {
 	names = split(values)
@@ -34,14 +38,35 @@ func etcdPeerEnpointsAre(urls string) error {
 
 func ectdServerIsRun() error {
 
+	serversWaitGroup.Add(len(names))
+	var results sync.Map
+
 	for index, name := range names {
-		runServer(name, clientEndpoints[index], peerEndpoints[index])
+		go runServer(name, clientEndpoints[index], peerEndpoints[index], results)
 	}
+
+	serversWaitGroup.Wait()
+
+	foundError := false
+
+	results.Range(func(k, v interface{}) bool {
+		foundError = true
+		fmt.Printf("server: %v, error: %v\n", k, v)
+		return true
+	})
+
+	if foundError {
+		return errors.New("Some servers fail to start. See output for more details")
+	}
+
 	return nil
 }
 
 func etcdServerIsClosed() error {
-	etcdServer.Server.Stop()
+
+	for _, etcdServer := range etcdServers {
+		etcdServer.Server.Stop()
+	}
 	return nil
 }
 
@@ -58,18 +83,22 @@ func getInitialCluster() string {
 	return initialCluster
 }
 
-func runServer(name string, clientEndpoint string, peerEndPoint string) error {
+func runServer(name string, clientEndpoint string, peerEndPoint string, results sync.Map) {
+
+	defer serversWaitGroup.Done()
 
 	clientURL, err := url.Parse(clientEndpoint)
 
 	if err != nil {
-		return err
+		results.Store(name, err)
+		return
 	}
 
 	peerURL, err := clientURL.Parse(peerEndPoint)
 
 	if err != nil {
-		return err
+		results.Store(name, err)
+		return
 	}
 
 	cfg := embed.NewConfig()
@@ -81,8 +110,11 @@ func runServer(name string, clientEndpoint string, peerEndPoint string) error {
 
 	// --advertise-client-urls
 	cfg.ACUrls = []url.URL{*clientURL}
+
 	// --listen-peer-urls
+
 	cfg.LPUrls = []url.URL{*peerURL}
+
 	// --initial-advertise-peer-urls
 	cfg.APUrls = []url.URL{*peerURL}
 
@@ -94,20 +126,22 @@ func runServer(name string, clientEndpoint string, peerEndPoint string) error {
 	//  --initial-cluster-state
 	cfg.ClusterState = embed.ClusterStateFlagNew
 
-	// cfg.Debug = true
-
-	etcdServer, err = embed.StartEtcd(cfg)
+	etcdServer, err := embed.StartEtcd(cfg)
 
 	if err != nil {
-		return err
+		results.Store(name, err)
+		return
 	}
+
+	mx.Lock()
+	etcdServers = append(etcdServers, etcdServer)
+	mx.Unlock()
 
 	select {
 	case <-etcdServer.Server.ReadyNotify():
 	case <-time.After(10 * time.Second):
 		etcdServer.Server.Stop()
-		return errors.New("etcd server took too long to start")
+		results.Store(name, errors.New("etcd server took too long to start"))
+		return
 	}
-
-	return nil
 }
