@@ -36,7 +36,7 @@ func etcdPeerEnpointsAre(urls string) error {
 	return nil
 }
 
-func ectdServerIsRun() error {
+func ectdClusterIsRun() error {
 
 	serversWaitGroup.Add(len(names))
 	var results sync.Map
@@ -62,7 +62,7 @@ func ectdServerIsRun() error {
 	return nil
 }
 
-func etcdServerIsClosed() error {
+func etcdClusterIsStopped() error {
 
 	for _, etcdServer := range etcdServers {
 		etcdServer.Server.Stop()
