@@ -47,11 +47,10 @@ type requestCounter struct {
 	readRequests  int
 	writeRequests int
 	casRequests   int
-	start         time.Time
 }
 
 func newRequestCounter(msg string) *requestCounter {
-	return &requestCounter{message: msg, start: time.Now()}
+	return &requestCounter{message: msg}
 }
 
 func (counter *requestCounter) IncReads() {
@@ -69,15 +68,22 @@ func (counter *requestCounter) IncCAS() {
 	counter.totalRequets++
 }
 
-func (counter *requestCounter) Count() {
+func (counter *requestCounter) Add(otherCounter *requestCounter) {
+	counter.readRequests += otherCounter.readRequests
+	counter.writeRequests += otherCounter.writeRequests
+	counter.casRequests += otherCounter.casRequests
+	counter.totalRequets += otherCounter.totalRequets
+}
+
+func (counter *requestCounter) Count(start time.Time) {
 	fmt.Println(counter.message)
-	elapsed := time.Now().Sub(counter.start).Seconds()
+	elapsed := time.Now().Sub(start).Seconds()
 	requestsPerTime := float64(counter.totalRequets) / float64(elapsed)
 	fmt.Println("\x1b[34;1m",
-		"total requests: ", counter.totalRequets, "\n",
-		"read  requests: ", counter.readRequests, "\n",
-		"write requests: ", counter.writeRequests, "\n",
-		"cas   requests: ", counter.casRequests, "\n",
+		"read  : ", counter.readRequests, "\n",
+		"write : ", counter.writeRequests, "\n",
+		"cas   : ", counter.casRequests, "\n",
+		"total : ", counter.totalRequets, "\n",
 		"\x1b[0m",
 	)
 	fmt.Println("\x1b[36;1m",

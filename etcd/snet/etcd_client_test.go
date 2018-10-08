@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"go.etcd.io/etcd/clientv3"
@@ -176,6 +177,8 @@ func putGetRequestsShouldSucceed() error {
 		return err
 	}
 
+	start := time.Now()
+
 	for _, client := range clients {
 
 		key := client.GetKey()
@@ -200,48 +203,61 @@ func putGetRequestsShouldSucceed() error {
 		client.IncAmount()
 	}
 
-	etcd.requestCounter.Count()
+	etcd.requestCounter.Count(start)
 
 	return nil
 }
 
 func loadPutRequestsShouldSucceed() error {
 
-	etcd, err := NewEtcdStorageClient("Load Put/Get requests", clientEndpoints)
-
-	if err != nil {
-		return err
-	}
-
-	for i := 0; i < iterations; i++ {
-
-		// put/get
-		for _, client := range clients {
-
-			key := client.GetKey()
-			value := client.GetValue()
-
-			err = etcd.Put(key, value)
-
-			if err != nil {
-				return err
-			}
-
-			result, err := etcd.Get(key)
-
-			if err != nil {
-				return err
-			}
-
-			if !bytes.Equal(value, result) {
-				return errors.New("Values are not equal")
-			}
-
-			client.IncAmount()
+	var mx sync.Mutex
+	var exceptions []error
+	var storageClients []*EtcdStorageClient
+	for i := 0; i < len(clients); i++ {
+		etcd, err := NewEtcdStorageClient("Load Put/Get requests", clientEndpoints)
+		if err != nil {
+			return err
 		}
+		storageClients = append(storageClients, etcd)
 	}
 
-	etcd.requestCounter.Count()
+	var wg sync.WaitGroup
+	wg.Add(len(clients))
+	start := time.Now()
+
+	for index, client := range clients {
+		go func(request *TestClientRequest, storageClient *EtcdStorageClient) {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				key := request.GetKey()
+				value := request.GetValue()
+				err := storageClient.Put(key, value)
+
+				if err != nil {
+					mx.Lock()
+					defer mx.Unlock()
+					exceptions = append(exceptions, err)
+				}
+			}
+		}(client, storageClients[index])
+	}
+
+	wg.Wait()
+
+	requestCounter := newRequestCounter("Load Put/Get requests")
+	for _, storageClient := range storageClients {
+		requestCounter.Add(storageClient.requestCounter)
+	}
+
+	requestCounter.Count(start)
+
+	for _, err := range exceptions {
+		fmt.Println("Error during put request", err)
+	}
+
+	if len(exceptions) > 0 {
+		return errors.New("Errors during put requests")
+	}
 
 	return nil
 }
@@ -266,6 +282,8 @@ func compareAndSetRequestsShouldSucceed() error {
 			return err
 		}
 	}
+
+	start := time.Now()
 
 	for i := 0; i < iterations; i++ {
 
@@ -305,7 +323,7 @@ func compareAndSetRequestsShouldSucceed() error {
 		}
 	}
 
-	requestCounter.Count()
+	requestCounter.Count(start)
 
 	return nil
 }
