@@ -1,43 +1,27 @@
 # etcd throughput 
 
-## Put/Get
+Number of clients: 10
+Number of iterations: 500
 
-| Requests | Count |
+Requests per seconds:
+
+| op\nodes |   1 |   2|   3|   4|   5|   6|    7|    8|   9|  11|
+|------    |-----|----|----|----|----|----|-----|-----|----|----|
+| put      |7663 |1563|1455|1084| 986| 786|  677|  594| 466| 374|
+| cas      |5918 |1640|1820|1321|1200|1156|  858|  721| 652| 529|
+
+
+Put:
+
+| Request  | Calls |
 |----------|-------|
-| reads    | 6400  |
-| writes   | 6400  |
-| total    | 12800 |
+| writes   | 5000  |
+| total    | 5000  |
 
-### Client and etcd on the same host
+Compare And Swap:
 
-Elapsed time: 9.48s
-
-Requests per seconds:  1348.89
-
-### Client and etcd on differents hosts
-
-Elapsed time: 11.77s
-
-Requests per seconds:  1086.88
-
-
-## Comapre And Set
-
-| Requests | Count |
+| Request  | Calls |
 |----------|-------|
-| reads    | 12800  |
-| cas      | 6400  |
-| total    | 19200 |
-
-### Client and etcd on the same host
-
-Elapsed time: 10.938s
-
-Requests per seconds:  1755.30
-
-### Client and etcd on differents hosts
-
-Elapsed time: 16.16s
-
-Requests per seconds:  1188.03
-
+| reads    |  5000 |
+| cas      |  5000 |
+| total    | 10000 |
