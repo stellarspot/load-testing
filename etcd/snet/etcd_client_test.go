@@ -67,7 +67,7 @@ type EtcdStorage struct {
 	counter *requestCounter
 }
 
-func NewEtcdStorage(message string, endpoints []string) (*EtcdStorage, error) {
+func NewEtcdStorage(endpoints []string) (*EtcdStorage, error) {
 	etcdv3, err := clientv3.New(clientv3.Config{
 		Endpoints:   endpoints,
 		DialTimeout: timeout,
@@ -188,7 +188,7 @@ func numberOfIterationsIs(iter int) error {
 
 func putGetRequestsShouldSucceed() error {
 
-	storage, err := NewEtcdStorage("Put/Get requests", clientEndpoints)
+	storage, err := NewEtcdStorage(clientEndpoints)
 
 	if err != nil {
 		return err
@@ -308,7 +308,7 @@ func loadTest(title string, init loadFunc, load loadFunc) error {
 	var storages []*EtcdStorage
 
 	for _, request := range requests {
-		storage, err := NewEtcdStorage(title, clientEndpoints)
+		storage, err := NewEtcdStorage(clientEndpoints)
 		if err != nil {
 			return err
 		}
