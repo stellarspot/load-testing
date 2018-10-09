@@ -48,10 +48,10 @@ func byteArrayToInt(array []byte) int {
 }
 
 type requestCounter struct {
-	total int
 	read  int
 	write int
 	cas   int
+	total int
 }
 
 func (counter *requestCounter) IncReads() {

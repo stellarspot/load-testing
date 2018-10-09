@@ -17,6 +17,12 @@ type loadSyncStruct struct {
 	exceptions []error
 }
 
+func (s *loadSyncStruct) addError(err error) {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	s.exceptions = append(s.exceptions, err)
+}
+
 type loadFunc func(s *loadSyncStruct, request *TestClientRequest, storageClient *EtcdStorageClient)
 
 type TestClientRequest struct {
@@ -130,7 +136,7 @@ func (storageClient *EtcdStorageClient) CompareAndSet(key []byte, expect []byte,
 	storageClient.counter.IncCAS()
 
 	if debug {
-		fmt.Println("put response", response)
+		fmt.Println("CAS response", response)
 	}
 
 	if err != nil {
@@ -173,7 +179,6 @@ func thereAreClients(num int) error {
 
 func numberOfIterationsIs(iter int) error {
 	iterations = iter
-	fmt.Println("iterations: ", iterations)
 	return nil
 }
 
@@ -215,128 +220,136 @@ func putGetRequestsShouldSucceed() error {
 
 	return nil
 }
+
 func loadPutRequestsShouldSucceed() error {
 
-	return loadTest("Load Put/Get requests", func(
-		s *loadSyncStruct, request *TestClientRequest,
-		storageClient *EtcdStorageClient,
-	) {
-		defer s.wg.Done()
-		for i := 0; i < iterations; i++ {
-			key := request.GetKey()
-			value := request.GetValue()
-			err := storageClient.Put(key, value)
+	return loadTest("Load Put/Get requests",
+		func(
+			s *loadSyncStruct, request *TestClientRequest,
+			storageClient *EtcdStorageClient,
+		) {
+		},
+		func(
+			s *loadSyncStruct, request *TestClientRequest,
+			storageClient *EtcdStorageClient,
+		) {
+			defer s.wg.Done()
+			for i := 0; i < iterations; i++ {
+				key := request.GetKey()
+				value := request.GetValue()
+				err := storageClient.Put(key, value)
 
-			if err != nil {
-				s.mx.Lock()
-				defer s.mx.Unlock()
-				s.exceptions = append(s.exceptions, err)
+				if err != nil {
+					s.addError(err)
+					break
+				}
 			}
-		}
-	})
+		})
 }
 
-func loadTest(title string, f loadFunc) error {
+func loadTest(title string, init loadFunc, load loadFunc) error {
 
 	s := &loadSyncStruct{}
+	var storages []*EtcdStorageClient
 
-	var storageClients []*EtcdStorageClient
-	for i := 0; i < len(clients); i++ {
-		etcd, err := NewEtcdStorageClient(title, clientEndpoints)
+	for _, client := range clients {
+		storage, err := NewEtcdStorageClient(title, clientEndpoints)
 		if err != nil {
 			return err
 		}
-		storageClients = append(storageClients, etcd)
+		storages = append(storages, storage)
+
+		// call init function
+		init(s, client, storage)
+	}
+
+	err := checkExceptions(s.exceptions)
+
+	if err != nil {
+		return err
 	}
 
 	s.wg.Add(len(clients))
 	start := time.Now()
 
 	for index, client := range clients {
-		go f(s, client, storageClients[index])
+		go load(s, client, storages[index])
 	}
 
 	s.wg.Wait()
 
 	requestCounter := requestCounter{}
-	for _, storageClient := range storageClients {
+	for _, storageClient := range storages {
 		requestCounter.Add(storageClient.counter)
 	}
 
 	requestCounter.Count(title, start)
 
-	if len(s.exceptions) > 0 {
-		for _, err := range s.exceptions {
-			fmt.Println("Error during put request", err)
-		}
-		return errors.New("Errors during put requests")
-	}
+	return checkExceptions(s.exceptions)
+}
 
+func checkExceptions(exceptions []error) error {
+
+	if len(exceptions) > 0 {
+		for _, err := range exceptions {
+			fmt.Println("Error: ", err)
+		}
+		return errors.New("Errors during load requests")
+	}
 	return nil
 }
 
 func compareAndSetRequestsShouldSucceed() error {
 
-	requestCounter := requestCounter{}
 	etcd, etcdError := NewEtcdStorageClient("CAS requests", clientEndpoints)
 
 	if etcdError != nil {
 		return etcdError
 	}
 
-	// init
-	for _, client := range clients {
+	return loadTest("Load CAS requests",
+		func(
+			s *loadSyncStruct, request *TestClientRequest,
+			storageClient *EtcdStorageClient,
+		) {
+			key := request.GetKey()
+			initialAmount := intToByte32(request.prevAmount)
 
-		key := client.GetKey()
-		initialAmount := intToByte32(client.prevAmount)
-
-		err := etcd.Put(key, initialAmount)
-		if err != nil {
-			return err
-		}
-	}
-
-	start := time.Now()
-
-	for i := 0; i < iterations; i++ {
-
-		// CAS
-		for _, client := range clients {
-
-			key := client.GetKey()
-			value := client.GetValue()
-
-			prevValue, err := etcd.Get(key)
-			requestCounter.IncReads()
-
+			err := etcd.Put(key, initialAmount)
 			if err != nil {
-				return err
+				s.addError(err)
 			}
+		},
+		func(
+			s *loadSyncStruct, request *TestClientRequest,
+			storageClient *EtcdStorageClient,
+		) {
+			defer s.wg.Done()
 
-			success, err := etcd.CompareAndSet(key, prevValue, value)
-			requestCounter.IncCAS()
+			for i := 0; i < iterations; i++ {
 
-			if err != nil {
-				return err
+				key := request.GetKey()
+				value := request.GetValue()
+
+				prevValue, err := storageClient.Get(key)
+
+				if err != nil {
+					s.addError(err)
+					break
+				}
+
+				success, err := etcd.CompareAndSet(key, prevValue, value)
+
+				if err == nil && !success {
+					err = fmt.Errorf("etcd CAS fails expect: %v, update: %v", prevValue, value)
+				}
+
+				if err != nil {
+					s.addError(err)
+					break
+				}
+
+				request.IncAmount()
 			}
-
-			newValue, err := etcd.Get(key)
-			requestCounter.IncReads()
-
-			if !success {
-				msg := fmt.Sprintln("etcd CAS fails. Values",
-					" expect: ", prevValue,
-					" update: ", value,
-					" result: ", newValue,
-				)
-				return errors.New(msg)
-			}
-
-			client.IncAmount()
-		}
-	}
-
-	requestCounter.Count("Count CAS requests", start)
-
-	return nil
+		})
 }
