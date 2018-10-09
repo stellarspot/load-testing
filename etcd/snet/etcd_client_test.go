@@ -2,14 +2,17 @@ package snet
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
-
-	"go.etcd.io/etcd/clientv3"
 )
+
+var requests []*TestRequest
+var requestsNum int
+var iterations int
+var timeout = 10 * time.Second
+var connectionTimeout = 1 * time.Minute
 
 type loadSyncStruct struct {
 	mx         sync.Mutex
@@ -23,7 +26,7 @@ func (s *loadSyncStruct) addError(err error) {
 	s.exceptions = append(s.exceptions, err)
 }
 
-type loadFunc func(s *loadSyncStruct, request *TestRequest, storageClient *EtcdStorage)
+type loadFunc func(s *loadSyncStruct, request *TestRequest, storageClient *EtcdTestClient)
 
 type TestRequest struct {
 	channelID  uint32
@@ -62,100 +65,38 @@ func (request *TestRequest) ToString() string {
 	)
 }
 
-type EtcdStorage struct {
-	etcdv3  *clientv3.Client
+type EtcdTestClient struct {
+	*EtcdClient
 	counter *requestCounter
 }
 
-func NewEtcdStorage(endpoints []string) (*EtcdStorage, error) {
-	etcdv3, err := clientv3.New(clientv3.Config{
-		Endpoints:   endpoints,
-		DialTimeout: timeout,
-	})
+func NewEtcdTestClient(endpoints []string) (*EtcdTestClient, error) {
+	etcdClient, err := NewEtcdClient(connectionTimeout, timeout, endpoints)
 
 	if err != nil {
 		return nil, err
 	}
 
-	etcdStorage := EtcdStorage{
-		etcdv3:  etcdv3,
-		counter: &requestCounter{},
-	}
-
-	return &etcdStorage, nil
+	return &EtcdTestClient{
+		EtcdClient: etcdClient,
+		counter:    &requestCounter{},
+	}, err
 }
 
-func (storage *EtcdStorage) Get(key []byte) ([]byte, error) {
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	response, err := storage.etcdv3.Get(ctx, byteArraytoString(key))
-	defer cancel()
-	storage.counter.IncReads()
-
-	if debug {
-		fmt.Println("get response", response)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	for _, kv := range response.Kvs {
-		return kv.Value, nil
-	}
-	return nil, nil
+func (client *EtcdTestClient) Get(key []byte) ([]byte, error) {
+	client.counter.IncReads()
+	return client.EtcdClient.Get(key)
 }
 
-func (storage *EtcdStorage) Put(key []byte, value []byte) error {
-
-	etcdv3 := storage.etcdv3
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	response, err := etcdv3.Put(ctx, byteArraytoString(key), byteArraytoString(value))
-	defer cancel()
-	storage.counter.IncWrites()
-
-	if debug {
-		fmt.Println("put response", response)
-	}
-
-	return err
+func (client *EtcdTestClient) Put(key []byte, value []byte) error {
+	client.counter.IncWrites()
+	return client.EtcdClient.Put(key, value)
 }
 
-func (storage *EtcdStorage) CompareAndSet(key []byte, expect []byte, update []byte) (bool, error) {
-
-	etcdv3 := storage.etcdv3
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	response, err := etcdv3.KV.Txn(ctx).If(
-		clientv3.Compare(clientv3.Value(byteArraytoString(key)), "=", byteArraytoString(expect)),
-	).Then(
-		clientv3.OpPut(byteArraytoString(key), byteArraytoString(update)),
-	).Commit()
-
-	storage.counter.IncCAS()
-
-	if debug {
-		fmt.Println("CAS response", response)
-	}
-
-	if err != nil {
-		return false, err
-	}
-
-	return response.Succeeded, nil
+func (client *EtcdTestClient) CompareAndSet(key []byte, expect []byte, update []byte) (bool, error) {
+	client.counter.IncCAS()
+	return client.EtcdClient.CompareAndSet(key, expect, update)
 }
-
-func (storage *EtcdStorage) Close() {
-	storage.etcdv3.Close()
-}
-
-var debug = false
-
-var requests []*TestRequest
-var requestsNum int
-var iterations int
-var timeout = 10 * time.Second
 
 func createTestRequests(requestsNum uint32) *TestRequest {
 
@@ -188,7 +129,7 @@ func numberOfIterationsIs(iter int) error {
 
 func putGetRequestsShouldSucceed() error {
 
-	storage, err := NewEtcdStorage(clientEndpoints)
+	storage, err := NewEtcdTestClient(clientEndpoints)
 
 	if err != nil {
 		return err
@@ -232,13 +173,11 @@ func loadPutRequestsShouldSucceed() error {
 	return loadTest("Load Put/Get requests",
 		func(
 			s *loadSyncStruct, request *TestRequest,
-			storage *EtcdStorage,
-		) {
+			storage *EtcdTestClient) {
 		},
 		func(
 			s *loadSyncStruct, request *TestRequest,
-			storage *EtcdStorage,
-		) {
+			storage *EtcdTestClient) {
 			defer s.wg.Done()
 			for i := 0; i < iterations; i++ {
 				key := request.GetKey()
@@ -258,8 +197,7 @@ func compareAndSetRequestsShouldSucceed() error {
 	return loadTest("Load CAS requests",
 		func(
 			s *loadSyncStruct, request *TestRequest,
-			storage *EtcdStorage,
-		) {
+			storage *EtcdTestClient) {
 			key := request.GetKey()
 			initialAmount := intToByte32(request.prevAmount)
 
@@ -270,8 +208,7 @@ func compareAndSetRequestsShouldSucceed() error {
 		},
 		func(
 			s *loadSyncStruct, request *TestRequest,
-			storage *EtcdStorage,
-		) {
+			storage *EtcdTestClient) {
 			defer s.wg.Done()
 
 			for i := 0; i < iterations; i++ {
@@ -305,10 +242,10 @@ func compareAndSetRequestsShouldSucceed() error {
 func loadTest(title string, init loadFunc, load loadFunc) error {
 
 	s := &loadSyncStruct{}
-	var storages []*EtcdStorage
+	var storages []*EtcdTestClient
 
 	for _, request := range requests {
-		storage, err := NewEtcdStorage(clientEndpoints)
+		storage, err := NewEtcdTestClient(clientEndpoints)
 		if err != nil {
 			return err
 		}
