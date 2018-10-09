@@ -76,6 +76,13 @@ func (counter *requestCounter) Add(otherCounter *requestCounter) {
 	counter.total += otherCounter.total
 }
 
+func (counter *requestCounter) Reset() {
+	counter.read = 0
+	counter.write = 0
+	counter.cas = 0
+	counter.total = 0
+}
+
 func (counter *requestCounter) Count(title string, start time.Time) {
 	fmt.Println(title)
 	elapsed := time.Now().Sub(start).Seconds()
