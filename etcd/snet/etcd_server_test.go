@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -33,6 +34,26 @@ func etcdClientEndpointsAre(urls string) error {
 func etcdPeerEnpointsAre(urls string) error {
 
 	peerEndpoints = split(urls)
+	return nil
+}
+
+func etcdClusterConsistsOfNodes(nodesNum int) error {
+
+	port := 2379
+
+	for i := 0; i < nodesNum; i++ {
+		index := strconv.Itoa(i)
+		name := "infra" + index
+		names = append(names, name)
+
+		clientEndpoint := "http://127.0.0.1:" + strconv.Itoa(port)
+		clientEndpoints = append(clientEndpoints, clientEndpoint)
+		port++
+
+		peerEndpoint := "http://127.0.0.1:" + strconv.Itoa(port)
+		peerEndpoints = append(peerEndpoints, peerEndpoint)
+		port++
+	}
 	return nil
 }
 
@@ -120,7 +141,6 @@ func runServer(name string, clientEndpoint string, peerEndPoint string, results 
 
 	// --initial-cluster
 	initialCluster := getInitialCluster()
-	fmt.Printf("initial cluster: '%v'\n", initialCluster)
 	cfg.InitialCluster = initialCluster
 
 	//  --initial-cluster-state

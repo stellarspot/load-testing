@@ -146,12 +146,16 @@ func (storage *EtcdStorage) CompareAndSet(key []byte, expect []byte, update []by
 	return response.Succeeded, nil
 }
 
+func (storage *EtcdStorage) Close() {
+	storage.etcdv3.Close()
+}
+
 var debug = false
 
 var requests []*TestRequest
 var requestsNum int
 var iterations int
-var timeout = 3 * time.Second
+var timeout = 10 * time.Second
 
 func createTestRequests(requestsNum uint32) *TestRequest {
 
@@ -189,6 +193,8 @@ func putGetRequestsShouldSucceed() error {
 	if err != nil {
 		return err
 	}
+
+	defer storage.Close()
 
 	start := time.Now()
 
@@ -306,6 +312,7 @@ func loadTest(title string, init loadFunc, load loadFunc) error {
 		if err != nil {
 			return err
 		}
+		defer storage.Close()
 		storages = append(storages, storage)
 
 		// call init function
