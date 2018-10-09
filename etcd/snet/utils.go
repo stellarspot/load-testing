@@ -48,15 +48,10 @@ func byteArrayToInt(array []byte) int {
 }
 
 type requestCounter struct {
-	message string
-	total   int
-	read    int
-	write   int
-	cas     int
-}
-
-func newRequestCounter(msg string) *requestCounter {
-	return &requestCounter{message: msg}
+	total int
+	read  int
+	write int
+	cas   int
 }
 
 func (counter *requestCounter) IncReads() {
@@ -81,8 +76,8 @@ func (counter *requestCounter) Add(otherCounter *requestCounter) {
 	counter.total += otherCounter.total
 }
 
-func (counter *requestCounter) Count(start time.Time) {
-	fmt.Println(counter.message)
+func (counter *requestCounter) Count(title string, start time.Time) {
+	fmt.Println(title)
 	elapsed := time.Now().Sub(start).Seconds()
 	requestsPerTime := float64(counter.total) / float64(elapsed)
 

@@ -10,7 +10,7 @@ import (
 	"go.etcd.io/etcd/embed"
 )
 
-var mx sync.Mutex
+var serverMutex sync.Mutex
 
 var names []string
 var clientEndpoints []string
@@ -133,9 +133,9 @@ func runServer(name string, clientEndpoint string, peerEndPoint string, results 
 		return
 	}
 
-	mx.Lock()
+	serverMutex.Lock()
 	etcdServers = append(etcdServers, etcdServer)
-	mx.Unlock()
+	serverMutex.Unlock()
 
 	select {
 	case <-etcdServer.Server.ReadyNotify():

@@ -11,6 +11,14 @@ import (
 	"go.etcd.io/etcd/clientv3"
 )
 
+type loadSyncStruct struct {
+	mx         sync.Mutex
+	wg         sync.WaitGroup
+	exceptions []error
+}
+
+type loadFunc func(s *loadSyncStruct, request *TestClientRequest, storageClient *EtcdStorageClient)
+
 type TestClientRequest struct {
 	channelID  uint32
 	nonce      uint32
@@ -49,8 +57,8 @@ func (client *TestClientRequest) ToString() string {
 }
 
 type EtcdStorageClient struct {
-	etcdv3         *clientv3.Client
-	requestCounter *requestCounter
+	etcdv3  *clientv3.Client
+	counter *requestCounter
 }
 
 func NewEtcdStorageClient(message string, endpoints []string) (*EtcdStorageClient, error) {
@@ -64,8 +72,8 @@ func NewEtcdStorageClient(message string, endpoints []string) (*EtcdStorageClien
 	}
 
 	etcdStorageClient := EtcdStorageClient{
-		etcdv3:         etcdv3,
-		requestCounter: newRequestCounter(message),
+		etcdv3:  etcdv3,
+		counter: &requestCounter{},
 	}
 
 	return &etcdStorageClient, nil
@@ -76,7 +84,7 @@ func (storageClient *EtcdStorageClient) Get(key []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	response, err := storageClient.etcdv3.Get(ctx, byteArraytoString(key))
 	defer cancel()
-	storageClient.requestCounter.IncReads()
+	storageClient.counter.IncReads()
 
 	if debug {
 		fmt.Println("get response", response)
@@ -98,7 +106,7 @@ func (storageClient *EtcdStorageClient) Put(key []byte, value []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	response, err := etcdv3.Put(ctx, byteArraytoString(key), byteArraytoString(value))
 	defer cancel()
-	storageClient.requestCounter.IncWrites()
+	storageClient.counter.IncWrites()
 
 	if debug {
 		fmt.Println("put response", response)
@@ -119,7 +127,7 @@ func (storageClient *EtcdStorageClient) CompareAndSet(key []byte, expect []byte,
 		clientv3.OpPut(byteArraytoString(key), byteArraytoString(update)),
 	).Commit()
 
-	storageClient.requestCounter.IncCAS()
+	storageClient.counter.IncCAS()
 
 	if debug {
 		fmt.Println("put response", response)
@@ -203,59 +211,64 @@ func putGetRequestsShouldSucceed() error {
 		client.IncAmount()
 	}
 
-	etcd.requestCounter.Count(start)
+	etcd.counter.Count("Put/Get requests", start)
 
 	return nil
 }
-
 func loadPutRequestsShouldSucceed() error {
 
-	var mx sync.Mutex
-	var exceptions []error
+	return loadTest("Load Put/Get requests", func(
+		s *loadSyncStruct, request *TestClientRequest,
+		storageClient *EtcdStorageClient,
+	) {
+		defer s.wg.Done()
+		for i := 0; i < iterations; i++ {
+			key := request.GetKey()
+			value := request.GetValue()
+			err := storageClient.Put(key, value)
+
+			if err != nil {
+				s.mx.Lock()
+				defer s.mx.Unlock()
+				s.exceptions = append(s.exceptions, err)
+			}
+		}
+	})
+}
+
+func loadTest(title string, f loadFunc) error {
+
+	s := &loadSyncStruct{}
+
 	var storageClients []*EtcdStorageClient
 	for i := 0; i < len(clients); i++ {
-		etcd, err := NewEtcdStorageClient("Load Put/Get requests", clientEndpoints)
+		etcd, err := NewEtcdStorageClient(title, clientEndpoints)
 		if err != nil {
 			return err
 		}
 		storageClients = append(storageClients, etcd)
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(len(clients))
+	s.wg.Add(len(clients))
 	start := time.Now()
 
 	for index, client := range clients {
-		go func(request *TestClientRequest, storageClient *EtcdStorageClient) {
-			defer wg.Done()
-			for i := 0; i < iterations; i++ {
-				key := request.GetKey()
-				value := request.GetValue()
-				err := storageClient.Put(key, value)
-
-				if err != nil {
-					mx.Lock()
-					defer mx.Unlock()
-					exceptions = append(exceptions, err)
-				}
-			}
-		}(client, storageClients[index])
+		go f(s, client, storageClients[index])
 	}
 
-	wg.Wait()
+	s.wg.Wait()
 
-	requestCounter := newRequestCounter("Load Put/Get requests")
+	requestCounter := requestCounter{}
 	for _, storageClient := range storageClients {
-		requestCounter.Add(storageClient.requestCounter)
+		requestCounter.Add(storageClient.counter)
 	}
 
-	requestCounter.Count(start)
+	requestCounter.Count(title, start)
 
-	for _, err := range exceptions {
-		fmt.Println("Error during put request", err)
-	}
-
-	if len(exceptions) > 0 {
+	if len(s.exceptions) > 0 {
+		for _, err := range s.exceptions {
+			fmt.Println("Error during put request", err)
+		}
 		return errors.New("Errors during put requests")
 	}
 
@@ -264,7 +277,7 @@ func loadPutRequestsShouldSucceed() error {
 
 func compareAndSetRequestsShouldSucceed() error {
 
-	requestCounter := newRequestCounter("Count CAS requests")
+	requestCounter := requestCounter{}
 	etcd, etcdError := NewEtcdStorageClient("CAS requests", clientEndpoints)
 
 	if etcdError != nil {
@@ -323,7 +336,7 @@ func compareAndSetRequestsShouldSucceed() error {
 		}
 	}
 
-	requestCounter.Count(start)
+	requestCounter.Count("Count CAS requests", start)
 
 	return nil
 }
