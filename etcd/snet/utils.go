@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+const (
+	clrColorBlue = "\x1b[34;1m"
+	clrColorCyan = "\x1b[36;1m"
+	clrColorEnd  = "\x1b[0m"
+)
+
 func byteArraytoString(bytes []byte) string {
 	return string(bytes)
 }
@@ -42,11 +48,11 @@ func byteArrayToInt(array []byte) int {
 }
 
 type requestCounter struct {
-	message       string
-	totalRequets  int
-	readRequests  int
-	writeRequests int
-	casRequests   int
+	message string
+	total   int
+	read    int
+	write   int
+	cas     int
 }
 
 func newRequestCounter(msg string) *requestCounter {
@@ -54,44 +60,49 @@ func newRequestCounter(msg string) *requestCounter {
 }
 
 func (counter *requestCounter) IncReads() {
-	counter.readRequests++
-	counter.totalRequets++
+	counter.read++
+	counter.total++
 }
 
 func (counter *requestCounter) IncWrites() {
-	counter.writeRequests++
-	counter.totalRequets++
+	counter.write++
+	counter.total++
 }
 
 func (counter *requestCounter) IncCAS() {
-	counter.casRequests++
-	counter.totalRequets++
+	counter.cas++
+	counter.total++
 }
 
 func (counter *requestCounter) Add(otherCounter *requestCounter) {
-	counter.readRequests += otherCounter.readRequests
-	counter.writeRequests += otherCounter.writeRequests
-	counter.casRequests += otherCounter.casRequests
-	counter.totalRequets += otherCounter.totalRequets
+	counter.read += otherCounter.read
+	counter.write += otherCounter.write
+	counter.cas += otherCounter.cas
+	counter.total += otherCounter.total
 }
 
 func (counter *requestCounter) Count(start time.Time) {
 	fmt.Println(counter.message)
 	elapsed := time.Now().Sub(start).Seconds()
-	requestsPerTime := float64(counter.totalRequets) / float64(elapsed)
-	fmt.Println("\x1b[34;1m",
-		"read  : ", counter.readRequests, "\n",
-		"write : ", counter.writeRequests, "\n",
-		"cas   : ", counter.casRequests, "\n",
-		"total : ", counter.totalRequets, "\n",
-		"\x1b[0m",
-	)
-	fmt.Println("\x1b[36;1m",
+	requestsPerTime := float64(counter.total) / float64(elapsed)
+
+	printCount(clrColorBlue, "read  : ", counter.read)
+	printCount(clrColorBlue, "write : ", counter.write)
+	printCount(clrColorBlue, "cas   : ", counter.cas)
+	printCount(clrColorBlue, "total : ", counter.total)
+
+	fmt.Println(
+		clrColorCyan,
 		"elapsed time in seconds: ", elapsed, "\n",
 		"requests per seconds: ", strconv.FormatFloat(requestsPerTime, 'f', 2, 64), "\n",
-		"\x1b[0m",
+		clrColorEnd,
 	)
+}
 
+func printCount(color string, name string, count int) {
+	if count > 0 {
+		fmt.Println(color, name, count, clrColorEnd)
+	}
 }
 
 func split(strs string) []string {
